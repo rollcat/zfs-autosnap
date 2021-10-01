@@ -36,7 +36,7 @@ impl RetentionPolicy {
         for cap in RE.captures_iter(x) {
             match cap.get(0) {
                 Some(m) => {
-                    let s = &m.as_str().to_string();
+                    let s = &m.as_str();
                     let prefix = s.chars().nth(0).unwrap();
                     let value = s.get(1..).unwrap();
                     match prefix {
