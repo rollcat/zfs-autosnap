@@ -1,9 +1,3 @@
-extern crate anyhow;
-extern crate byte_unit;
-extern crate chrono;
-extern crate regex;
-extern crate subprocess;
-
 use anyhow::Result;
 use byte_unit::Byte;
 use chrono::prelude::*;
