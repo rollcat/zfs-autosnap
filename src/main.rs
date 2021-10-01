@@ -274,14 +274,14 @@ impl ZFS {
 
 fn gc_find() -> Result<AgeCheckResult> {
     // List all snapshots we're interested in, group them by dataset, check them against
-    // their parent dataset's retention policy, and aggreagate them into the final result,
+    // their parent dataset's retention policy, and aggregate them into the final result,
     // which can be presented to the user (do_status()) or the garbage collector (do_gc()).
     let snapshots = ZFS::list_snapshots()?;
-    let mut by_dataset = HashMap::<&str, Vec<SnapshotMetadata>>::new();
-    for snapshot in &snapshots {
+    let mut by_dataset = HashMap::<String, Vec<SnapshotMetadata>>::new();
+    for snapshot in snapshots {
         if let Some(dataset_name) = snapshot.name.split("@").next() {
-            let group = by_dataset.entry(dataset_name).or_insert(vec![]);
-            group.push(snapshot.clone());
+            let group = by_dataset.entry(dataset_name.to_string()).or_insert(vec![]);
+            group.push(snapshot);
         }
     }
     let mut keep = vec![];
