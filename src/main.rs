@@ -284,19 +284,17 @@ fn gc_find() -> Result<AgeCheckResult> {
             group.push(snapshot.clone());
         }
     }
-    let mut aggregate = AgeCheckResult {
-        keep: vec![],
-        delete: vec![],
-    };
+    let mut keep = vec![];
+    let mut delete = vec![];
     for (key, group) in &by_dataset {
         let check = check_age(
             group.to_vec(),
             RetentionPolicy::from_str(&ZFS::get_property(key, PROPERTY_SNAPKEEP)?).unwrap(),
         );
-        aggregate.keep.extend_from_slice(&check.keep);
-        aggregate.delete.extend_from_slice(&check.delete);
+        keep.extend(check.keep);
+        delete.extend(check.delete);
     }
-    Ok(aggregate)
+    Ok(AgeCheckResult { keep, delete })
 }
 
 fn do_help() {
