@@ -1,7 +1,7 @@
-use anyhow::Result;
 use byte_unit::Byte;
 use chrono::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::str::FromStr;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -9,6 +9,8 @@ const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 // We use this property to control the retention policy.  Check readme.md, but also
 // check_age, ZFS::list_snapshots, and ZFS::list_datasets_for_snapshot.
 const PROPERTY_SNAPKEEP: &str = "at.rollc.at:snapkeep";
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 // Describes the number of snapshots to keep for each period.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -253,7 +255,7 @@ impl ZFS {
         {
             Ok(())
         } else {
-            Err(anyhow::Error::msg("zfs command error"))
+            Err("zfs command error".into())
         }
     }
 
