@@ -88,9 +88,8 @@ struct AgeCheckResult {
     delete: Vec<SnapshotMetadata>,
 }
 
-fn check_age(snapshots: Vec<SnapshotMetadata>, rp: RetentionPolicy) -> AgeCheckResult {
+fn check_age(mut snapshots: Vec<SnapshotMetadata>, rp: RetentionPolicy) -> AgeCheckResult {
     let mut keep = HashSet::<SnapshotMetadata>::new();
-    let mut snapshots: Vec<SnapshotMetadata> = snapshots.iter().map(|s| s.clone()).collect();
     // Sort newest snapshots first, so when we consider which ones to retain, the oldest
     // come last (and fall off the keep-set).
     snapshots.sort_unstable_by_key(|s| -s.created.timestamp());
