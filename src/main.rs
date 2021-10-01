@@ -4,6 +4,7 @@ use chrono::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -22,50 +23,6 @@ struct RetentionPolicy {
 }
 
 impl RetentionPolicy {
-    fn parse(x: &str) -> Option<RetentionPolicy> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new("[hdwmy][0-9]+").unwrap();
-        }
-        let mut rp = RetentionPolicy {
-            yearly: None,
-            monthly: None,
-            weekly: None,
-            daily: None,
-            hourly: None,
-        };
-        for cap in RE.captures_iter(x) {
-            match cap.get(0) {
-                Some(m) => {
-                    let s = &m.as_str();
-                    let prefix = s.chars().nth(0).unwrap();
-                    let value = s.get(1..).unwrap();
-                    match prefix {
-                        'y' => {
-                            rp.yearly = Some(value.parse::<i32>().unwrap());
-                        }
-                        'm' => {
-                            rp.monthly = Some(value.parse::<u32>().unwrap());
-                        }
-                        'w' => {
-                            rp.weekly = Some(value.parse::<u32>().unwrap());
-                        }
-                        'd' => {
-                            rp.daily = Some(value.parse::<u32>().unwrap());
-                        }
-                        'h' => {
-                            rp.hourly = Some(value.parse::<u32>().unwrap());
-                        }
-                        _ => {
-                            unreachable!();
-                        }
-                    }
-                }
-                _ => {}
-            };
-        }
-        Some(rp)
-    }
-
     fn rules(&self) -> [(&str, Option<u32>); 5] {
         [
             ("%Y-%m-%d %H", self.hourly),
@@ -82,6 +39,39 @@ impl RetentionPolicy {
                 },
             ),
         ]
+    }
+}
+
+impl FromStr for RetentionPolicy {
+    type Err = ();
+
+    fn from_str(x: &str) -> std::result::Result<Self, Self::Err> {
+        lazy_static! {
+            static ref RE: Regex = Regex::new("[hdwmy][0-9]+").unwrap();
+        }
+        let mut rp = RetentionPolicy {
+            yearly: None,
+            monthly: None,
+            weekly: None,
+            daily: None,
+            hourly: None,
+        };
+        for cap in RE.captures_iter(x) {
+            if let Some(m) = cap.get(0) {
+                let s = &m.as_str();
+                let prefix = s.chars().next().unwrap();
+                let value = &s[1..];
+                match prefix {
+                    'y' => rp.yearly = Some(value.parse::<i32>().unwrap()),
+                    'm' => rp.monthly = Some(value.parse::<u32>().unwrap()),
+                    'w' => rp.weekly = Some(value.parse::<u32>().unwrap()),
+                    'd' => rp.daily = Some(value.parse::<u32>().unwrap()),
+                    'h' => rp.hourly = Some(value.parse::<u32>().unwrap()),
+                    _ => unreachable!(),
+                }
+            };
+        }
+        Ok(rp)
     }
 }
 
@@ -302,7 +292,7 @@ fn gc_find() -> Result<AgeCheckResult> {
     for (key, group) in &by_dataset {
         let check = check_age(
             group.to_vec(),
-            RetentionPolicy::parse(&ZFS::get_property(key, PROPERTY_SNAPKEEP)?).unwrap(),
+            RetentionPolicy::from_str(&ZFS::get_property(key, PROPERTY_SNAPKEEP)?).unwrap(),
         );
         aggregate.keep.extend_from_slice(&check.keep);
         aggregate.delete.extend_from_slice(&check.delete);
