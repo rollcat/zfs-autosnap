@@ -3,7 +3,6 @@ name = "zfs-autosnap"
 version = "0.1.0"
 edition = "2018"
 license = "MIT"
-license-file = "license.txt"
 
 [dependencies]
 anyhow = "1"
