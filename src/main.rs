@@ -240,8 +240,8 @@ impl ZFS {
             .stdout(subprocess::Redirection::Pipe)
             .capture()?
             .stdout_str()
-            .split("\n")
-            .filter(|s| s != &"")
+            .lines()
+            .filter(|&s| !s.is_empty())
             .map(|s| s.split("\t").map(|ss| ss.to_string()).collect())
             .collect())
     }
