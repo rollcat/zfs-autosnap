@@ -1,8 +1,6 @@
 use anyhow::Result;
 use byte_unit::Byte;
 use chrono::prelude::*;
-use lazy_static::lazy_static;
-use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
@@ -46,32 +44,31 @@ impl FromStr for RetentionPolicy {
     type Err = ();
 
     fn from_str(x: &str) -> std::result::Result<Self, Self::Err> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new("[hdwmy][0-9]+").unwrap();
+        fn digits_from(start: usize, s: &str) -> &str {
+            let s = &s[start..];
+            let end = s.chars().take_while(|ch| ch.is_ascii_digit()).count();
+            &s[..end]
         }
-        let mut rp = RetentionPolicy {
+        let mut policy = RetentionPolicy {
             yearly: None,
             monthly: None,
             weekly: None,
             daily: None,
             hourly: None,
         };
-        for cap in RE.captures_iter(x) {
-            if let Some(m) = cap.get(0) {
-                let s = &m.as_str();
-                let prefix = s.chars().next().unwrap();
-                let value = &s[1..];
-                match prefix {
-                    'y' => rp.yearly = Some(value.parse::<i32>().unwrap()),
-                    'm' => rp.monthly = Some(value.parse::<u32>().unwrap()),
-                    'w' => rp.weekly = Some(value.parse::<u32>().unwrap()),
-                    'd' => rp.daily = Some(value.parse::<u32>().unwrap()),
-                    'h' => rp.hourly = Some(value.parse::<u32>().unwrap()),
-                    _ => unreachable!(),
-                }
-            };
+        let mut chars = x.chars().enumerate();
+        while let Some((i, ch)) = chars.next() {
+            match ch {
+                'y' => policy.yearly = digits_from(i + 1, x).parse().ok(),
+                'm' => policy.monthly = digits_from(i + 1, x).parse().ok(),
+                'w' => policy.weekly = digits_from(i + 1, x).parse().ok(),
+                'd' => policy.daily = digits_from(i + 1, x).parse().ok(),
+                'h' => policy.hourly = digits_from(i + 1, x).parse().ok(),
+                _ => {}
+            }
         }
-        Ok(rp)
+
+        Ok(policy)
     }
 }
 
@@ -438,7 +435,7 @@ mod tests {
             monthly: Some(6),
             weekly: Some(8),
             daily: Some(30),
-            hourly: Some(24)
+            hourly: Some(24),
         };
         assert_eq!(actual, expected);
     }
@@ -451,7 +448,7 @@ mod tests {
             monthly: Some(5),
             weekly: None,
             daily: Some(88),
-            hourly: None
+            hourly: None,
         };
         assert_eq!(actual, expected);
     }
@@ -464,7 +461,20 @@ mod tests {
             monthly: None,
             weekly: None,
             daily: None,
-            hourly: None
+            hourly: None,
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_retention_policy_truncated() {
+        let actual = RetentionPolicy::from_str("y").unwrap();
+        let expected = RetentionPolicy {
+            yearly: None,
+            monthly: None,
+            weekly: None,
+            daily: None,
+            hourly: None,
         };
         assert_eq!(actual, expected);
     }
