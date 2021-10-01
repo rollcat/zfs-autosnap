@@ -425,3 +425,47 @@ fn main() -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_retention_policy_from_str() {
+        let actual = RetentionPolicy::from_str("h24d30w8m6y1").unwrap();
+        let expected = RetentionPolicy {
+            yearly: Some(1),
+            monthly: Some(6),
+            weekly: Some(8),
+            daily: Some(30),
+            hourly: Some(24)
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_retention_policy_invalid() {
+        let actual = RetentionPolicy::from_str("y1d88a1b2c3m5").unwrap();
+        let expected = RetentionPolicy {
+            yearly: Some(1),
+            monthly: Some(5),
+            weekly: None,
+            daily: Some(88),
+            hourly: None
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_retention_policy_empty() {
+        let actual = RetentionPolicy::from_str("").unwrap();
+        let expected = RetentionPolicy {
+            yearly: None,
+            monthly: None,
+            weekly: None,
+            daily: None,
+            hourly: None
+        };
+        assert_eq!(actual, expected);
+    }
+}
