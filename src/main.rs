@@ -154,7 +154,7 @@ impl ZFS {
     fn list_snapshots() -> Result<Vec<SnapshotMetadata>> {
         // List all snapshots under our control.
         // zfs list -H -t snapshot -o name,creation,used,at.rollc.at:snapkeep
-        Ok(ZFS::_call_read(
+        let lines = ZFS::_call_read(
             "list",
             &[
                 "-t",
@@ -162,32 +162,37 @@ impl ZFS {
                 "-o",
                 format!("name,creation,used,{}", PROPERTY_SNAPKEEP).as_str(),
             ],
-        )?
-        .iter()
-        .filter(|v| match &v[..] {
-            // Skip snapshots that don't have the 'at.rollc.at:snapkeep' property.
-            // This works both for datasets where a snapshot did not inherit the property
-            // (which means the dataset should not be managed), and for explicitly marking a
-            // snapshot to be retained / opted out.
-            [_, _, _, snapkeep] => snapkeep != "-",
-            _ => panic!("Parse error"),
-        })
-        .map(|v| {
-            let sm = match &v[..] {
-                [name, created, used, _] => SnapshotMetadata {
-                    name: name.to_string(),
-                    created: chrono::DateTime::from_utc(
-                        chrono::NaiveDateTime::parse_from_str(&created, "%a %b %e %H:%M %Y")
-                            .unwrap(),
-                        chrono::Utc,
-                    ),
-                    used: ZFS::_parse_used(used).unwrap(),
-                },
+        )?;
+        Ok(ZFS::_parse_snapshots(lines))
+    }
+
+    fn _parse_snapshots(lines: Vec<Vec<String>>) -> Vec<SnapshotMetadata> {
+        lines
+            .iter()
+            .filter(|v| match &v[..] {
+                // Skip snapshots that don't have the 'at.rollc.at:snapkeep' property.
+                // This works both for datasets where a snapshot did not inherit the property
+                // (which means the dataset should not be managed), and for explicitly marking a
+                // snapshot to be retained / opted out.
+                [_, _, _, snapkeep] => snapkeep != "-",
                 _ => panic!("Parse error"),
-            };
-            sm
-        })
-        .collect())
+            })
+            .map(|v| {
+                let sm = match &v[..] {
+                    [name, created, used, _] => SnapshotMetadata {
+                        name: name.to_string(),
+                        created: chrono::DateTime::from_utc(
+                            chrono::NaiveDateTime::parse_from_str(&created, "%a %b %e %H:%M %Y")
+                                .unwrap(),
+                            chrono::Utc,
+                        ),
+                        used: ZFS::_parse_used(used).unwrap(),
+                    },
+                    _ => panic!("Parse error"),
+                };
+                sm
+            })
+            .collect()
     }
 
     fn get_property(dataset: &str, property: &str) -> Result<String> {
@@ -479,5 +484,68 @@ mod tests {
             hourly: None,
         };
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_parse_snapshots() {
+        let lines = vec![
+            // name, created, used, snapkeep
+            vec![
+                String::from("first"),
+                String::from("Sat Oct 2 09:59 2021"),
+                String::from("13G"),
+                String::from("at.rollc.at:snapkeep=h24d30w8m6y1"),
+            ],
+            vec![
+                String::from("skip"),
+                String::from("Sat Oct 1 19:59 2021"),
+                String::from("2G"),
+                String::from("-"),
+            ],
+        ];
+        let snapshots = ZFS::_parse_snapshots(lines);
+        assert_eq!(
+            snapshots,
+            vec![SnapshotMetadata {
+                name: String::from("first"),
+                created: chrono::DateTime::from_utc(
+                    chrono::NaiveDateTime::parse_from_str(
+                        "Sat Oct 2 09:59 2021",
+                        "%a %b %e %H:%M %Y"
+                    )
+                    .unwrap(),
+                    chrono::Utc,
+                ),
+                used: Byte::from(13u64 * 1024 * 1024 * 1024),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_parse_snapshots_empty() {
+        let lines = vec![];
+        let snapshots = ZFS::_parse_snapshots(lines);
+        assert_eq!(snapshots, vec![]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_parse_snapshots_invalid_row() {
+        let lines = vec![vec![String::from("unexpected")]];
+        let snapshots = ZFS::_parse_snapshots(lines);
+        assert_eq!(snapshots, vec![]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_parse_snapshots_invalid_date() {
+        let lines = vec![vec![
+            String::from("first"),
+            String::from("2 Oct 2021 9:52AM"),
+            String::from("3G"),
+            String::from("at.rollc.at:snapkeep=h24d30w8m6y1"),
+        ]];
+        let snapshots = ZFS::_parse_snapshots(lines);
+        assert_eq!(snapshots, vec![]);
     }
 }
