@@ -142,18 +142,9 @@ fn main() -> Result<()> {
             do_version();
             Ok(())
         }
-        Some("status") => {
-            do_status()?;
-            Ok(())
-        }
-        Some("snap") => {
-            do_snap()?;
-            Ok(())
-        }
-        Some("gc") => {
-            do_gc()?;
-            Ok(())
-        }
+        Some("status") => do_status(),
+        Some("snap") => do_snap(),
+        Some("gc") => do_gc(),
         _ => {
             do_help();
             std::process::exit(111);
