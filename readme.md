@@ -57,7 +57,7 @@ WantedBy=timers.target
 Description=Take ZFS auto snapshot
 
 [Service]
-ExecStart=zfs-autosnap snap
+ExecStart=zfs-autosnap snap dataset_name
 ```
 
 ### /etc/systemd/system/zfs-autosnap-gc.timer
@@ -81,5 +81,5 @@ WantedBy=timers.target
 Description=Garbage collect ZFS auto snapshots
 
 [Service]
-ExecStart=zfs-autosnap gc
+ExecStart=zfs-autosnap gc dataset_name
 ```
