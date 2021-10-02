@@ -1,85 +1,12 @@
 use byte_unit::Byte;
 use chrono::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::error::Error;
 use std::str::FromStr;
 
+use zfs_autosnap::zfs::SnapshotMetadata;
+use zfs_autosnap::{zfs, Result, RetentionPolicy, PROPERTY_SNAPKEEP};
+
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
-// We use this property to control the retention policy.  Check readme.md, but also
-// check_age, ZFS::list_snapshots, and ZFS::list_datasets_for_snapshot.
-const PROPERTY_SNAPKEEP: &str = "at.rollc.at:snapkeep";
-
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-// Describes the number of snapshots to keep for each period.
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-struct RetentionPolicy {
-    yearly: Option<i32>,
-    monthly: Option<u32>,
-    weekly: Option<u32>,
-    daily: Option<u32>,
-    hourly: Option<u32>,
-}
-
-impl RetentionPolicy {
-    fn rules(&self) -> [(&str, Option<u32>); 5] {
-        [
-            ("%Y-%m-%d %H", self.hourly),
-            ("%Y-%m-%d", self.daily),
-            ("%Y w%w", self.weekly),
-            ("%Y-%m", self.monthly),
-            (
-                "%Y",
-                // NOTE: chrono keeps years as i32 (signed); however there were no ZFS
-                // deployments before ca (+)2006, so I guess it's safe to cast to u32.
-                match self.yearly {
-                    Some(y) => Some(y as u32),
-                    None => None,
-                },
-            ),
-        ]
-    }
-}
-
-impl FromStr for RetentionPolicy {
-    type Err = ();
-
-    fn from_str(x: &str) -> std::result::Result<Self, Self::Err> {
-        fn digits_from(start: usize, s: &str) -> &str {
-            let s = &s[start..];
-            let end = s.chars().take_while(|ch| ch.is_ascii_digit()).count();
-            &s[..end]
-        }
-        let mut policy = RetentionPolicy {
-            yearly: None,
-            monthly: None,
-            weekly: None,
-            daily: None,
-            hourly: None,
-        };
-        let mut chars = x.chars().enumerate();
-        while let Some((i, ch)) = chars.next() {
-            match ch {
-                'y' => policy.yearly = digits_from(i + 1, x).parse().ok(),
-                'm' => policy.monthly = digits_from(i + 1, x).parse().ok(),
-                'w' => policy.weekly = digits_from(i + 1, x).parse().ok(),
-                'd' => policy.daily = digits_from(i + 1, x).parse().ok(),
-                'h' => policy.hourly = digits_from(i + 1, x).parse().ok(),
-                _ => {}
-            }
-        }
-
-        Ok(policy)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-struct SnapshotMetadata {
-    name: String,
-    created: chrono::DateTime<Utc>,
-    used: Byte,
-}
 
 #[derive(Debug)]
 struct AgeCheckResult {
@@ -130,151 +57,11 @@ fn check_age(snapshots: &mut [SnapshotMetadata], rp: RetentionPolicy) -> AgeChec
     }
 }
 
-struct ZFS;
-impl ZFS {
-    fn snapshot(dataset: &str) -> Result<SnapshotMetadata> {
-        // Take a snapshot of the given dataset, with an auto-generated name.
-        let now = Utc::now();
-        let name = format!(
-            "{}@{}-autosnap",
-            dataset,
-            now.to_rfc3339_opts(SecondsFormat::Secs, true)
-        );
-        ZFS::_call_do("snap", &[&name])?;
-        Ok(SnapshotMetadata {
-            name: name.clone(),
-            created: now,
-            used: ZFS::_parse_used(&ZFS::get_property(&name, "used")?)?,
-        })
-    }
-
-    fn list_snapshots() -> Result<Vec<SnapshotMetadata>> {
-        // List all snapshots under our control.
-        // zfs list -H -t snapshot -o name,creation,used,at.rollc.at:snapkeep
-        let lines = ZFS::_call_read(
-            "list",
-            &[
-                "-t",
-                "snapshot",
-                "-o",
-                &format!("name,creation,used,{}", PROPERTY_SNAPKEEP),
-            ],
-        )?;
-        ZFS::_parse_snapshots(lines)
-    }
-
-    fn _parse_snapshots(lines: Vec<Vec<String>>) -> Result<Vec<SnapshotMetadata>> {
-        let mut snapshots = Vec::with_capacity(lines.len());
-        for line in lines {
-            // Skip snapshots that don't have the 'at.rollc.at:snapkeep' property.
-            // This works both for datasets where a snapshot did not inherit the property
-            // (which means the dataset should not be managed), and for explicitly marking a
-            // snapshot to be retained / opted out.
-            match line.as_slice() {
-                [_, _, _, snapkeep] if snapkeep == "-" => continue,
-                [name, created, used, _] => {
-                    let metadata = SnapshotMetadata {
-                        name: name.to_string(),
-                        created: chrono::DateTime::from_utc(
-                            chrono::NaiveDateTime::parse_from_str(created, "%a %b %e %H:%M %Y")?,
-                            chrono::Utc,
-                        ),
-                        used: ZFS::_parse_used(used)?,
-                    };
-                    snapshots.push(metadata)
-                }
-                _ => return Err("list snapshots parse error".into()),
-            }
-        }
-        Ok(snapshots)
-    }
-
-    fn get_property(dataset: &str, property: &str) -> Result<String> {
-        // Get a single named property on given dataset.
-        // zfs list -H -t snapshot -o name,creation,used,at.rollc.at:snapkeep
-        Ok(ZFS::_call_read("get", &[property, "-o", "value", dataset])?
-            .iter()
-            .next()
-            .unwrap()[0]
-            .clone())
-    }
-
-    fn list_datasets_for_snapshot() -> Result<Vec<String>> {
-        // Which datasets should get a snapshot?
-        // zfs get -H -t filesystem,volume -o name,value at.rollc.at:snapkeep
-        Ok(ZFS::_call_read(
-            "get",
-            &[
-                "-t",
-                "filesystem,volume",
-                "-o",
-                "name,value",
-                PROPERTY_SNAPKEEP,
-            ],
-        )?
-        .iter()
-        .filter(|kv| kv[1] != "-")
-        .map(|kv| kv[0].clone())
-        .collect())
-    }
-
-    fn destroy_snapshot(snapshot: SnapshotMetadata) -> Result<()> {
-        // This will destroy the named snapshot. Since ZFS has a single verb for destroying
-        // anything, which could cause irreparable harm, we double check that the name we
-        // got passed looks like a snapshot name, and return an error otherwise.
-        if !snapshot.name.contains("@") {
-            return Err("Tried to destroy something that is not a snapshot".into());
-        }
-        // zfs destroy -H ...@...
-        ZFS::_call_do("destroy", &[&snapshot.name])
-    }
-
-    fn _call_read(action: &str, args: &[&str]) -> Result<Vec<Vec<String>>> {
-        // Helper function to get/list datasets and their properties into a nice table.
-        Ok(subprocess::Exec::cmd("zfs")
-            .arg(action)
-            .arg("-H")
-            .args(args)
-            .stdout(subprocess::Redirection::Pipe)
-            .capture()?
-            .stdout_str()
-            .lines()
-            .filter(|&s| !s.is_empty())
-            .map(|s| s.split("\t").map(|ss| ss.to_string()).collect())
-            .collect())
-    }
-
-    fn _call_do(action: &str, args: &[&str]) -> Result<()> {
-        // Perform a side effect, like snapshot or destroy.
-        if subprocess::Exec::cmd("zfs")
-            .arg(action)
-            .args(args)
-            .join()?
-            .success()
-        {
-            Ok(())
-        } else {
-            Err("zfs command error".into())
-        }
-    }
-
-    fn _parse_used(x: &str) -> Result<Byte> {
-        // The zfs(1) commandline tool says e.g. 1.2M but means 1.2MiB,
-        // so we mash it to make byte_unit parsing happy.
-        match x.chars().last() {
-            Some('K' | 'M' | 'G' | 'T' | 'P' | 'E' | 'Z') => {
-                Ok(Byte::from_str(x.to_owned() + "iB")?)
-            }
-            _ => Ok(Byte::from_str(x)?),
-        }
-    }
-}
-
 fn gc_find() -> Result<AgeCheckResult> {
     // List all snapshots we're interested in, group them by dataset, check them against
     // their parent dataset's retention policy, and aggregate them into the final result,
     // which can be presented to the user (do_status()) or the garbage collector (do_gc()).
-    let snapshots = ZFS::list_snapshots()?;
+    let snapshots = zfs::list_snapshots()?;
     let mut by_dataset = HashMap::<String, Vec<SnapshotMetadata>>::new();
     for snapshot in snapshots {
         if let Some(dataset_name) = snapshot.name.split("@").next() {
@@ -287,7 +74,7 @@ fn gc_find() -> Result<AgeCheckResult> {
     for (key, group) in by_dataset.iter_mut() {
         let check = check_age(
             group,
-            RetentionPolicy::from_str(&ZFS::get_property(key, PROPERTY_SNAPKEEP)?)
+            RetentionPolicy::from_str(&zfs::get_property(key, PROPERTY_SNAPKEEP)?)
                 .map_err(|()| "unable to parse retention policy")?,
         );
         keep.extend(check.keep);
@@ -358,8 +145,8 @@ fn do_status() -> Result<()> {
 
 fn do_snap() -> Result<()> {
     // Perform a snapshot of each managed dataset.
-    for dataset in &ZFS::list_datasets_for_snapshot()? {
-        let s = ZFS::snapshot(dataset)?;
+    for dataset in &zfs::list_datasets_for_snapshot()? {
+        let s = zfs::snapshot(dataset)?;
         println!("snapshot: {}", s.name);
     }
     Ok(())
@@ -389,7 +176,7 @@ fn do_gc() -> Result<()> {
             s.created.to_rfc3339_opts(SecondsFormat::Secs, true),
             s.used.get_appropriate_unit(true)
         );
-        ZFS::destroy_snapshot(s)?;
+        zfs::destroy_snapshot(s)?;
     }
     Ok(())
 }
@@ -422,123 +209,5 @@ fn main() -> Result<()> {
             do_help();
             std::process::exit(111);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_retention_policy_from_str() {
-        let actual = RetentionPolicy::from_str("h24d30w8m6y1").unwrap();
-        let expected = RetentionPolicy {
-            yearly: Some(1),
-            monthly: Some(6),
-            weekly: Some(8),
-            daily: Some(30),
-            hourly: Some(24),
-        };
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_retention_policy_invalid() {
-        let actual = RetentionPolicy::from_str("y1d88a1b2c3m5").unwrap();
-        let expected = RetentionPolicy {
-            yearly: Some(1),
-            monthly: Some(5),
-            weekly: None,
-            daily: Some(88),
-            hourly: None,
-        };
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_retention_policy_empty() {
-        let actual = RetentionPolicy::from_str("").unwrap();
-        let expected = RetentionPolicy {
-            yearly: None,
-            monthly: None,
-            weekly: None,
-            daily: None,
-            hourly: None,
-        };
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_retention_policy_truncated() {
-        let actual = RetentionPolicy::from_str("y").unwrap();
-        let expected = RetentionPolicy {
-            yearly: None,
-            monthly: None,
-            weekly: None,
-            daily: None,
-            hourly: None,
-        };
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_parse_snapshots() {
-        let lines = vec![
-            // name, created, used, snapkeep
-            vec![
-                String::from("first"),
-                String::from("Sat Oct 2 09:59 2021"),
-                String::from("13G"),
-                String::from("at.rollc.at:snapkeep=h24d30w8m6y1"),
-            ],
-            vec![
-                String::from("skip"),
-                String::from("Sat Oct 1 19:59 2021"),
-                String::from("2G"),
-                String::from("-"),
-            ],
-        ];
-        let snapshots = ZFS::_parse_snapshots(lines).unwrap();
-        assert_eq!(
-            snapshots,
-            vec![SnapshotMetadata {
-                name: String::from("first"),
-                created: chrono::DateTime::from_utc(
-                    chrono::NaiveDateTime::parse_from_str(
-                        "Sat Oct 2 09:59 2021",
-                        "%a %b %e %H:%M %Y",
-                    )
-                    .unwrap(),
-                    chrono::Utc,
-                ),
-                used: Byte::from(13u64 * 1024 * 1024 * 1024),
-            }]
-        );
-    }
-
-    #[test]
-    fn test_parse_snapshots_empty() {
-        let lines = vec![];
-        let snapshots = ZFS::_parse_snapshots(lines).unwrap();
-        assert_eq!(snapshots, vec![]);
-    }
-
-    #[test]
-    fn test_parse_snapshots_invalid_row() {
-        let lines = vec![vec![String::from("unexpected")]];
-        let err = ZFS::_parse_snapshots(lines).unwrap_err();
-        assert_eq!(err.to_string(), "list snapshots parse error");
-    }
-
-    #[test]
-    fn test_parse_snapshots_invalid_date() {
-        let lines = vec![vec![
-            String::from("first"),
-            String::from("2 Oct 2021 9:52AM"),
-            String::from("3G"),
-            String::from("at.rollc.at:snapkeep=h24d30w8m6y1"),
-        ]];
-        let err = ZFS::_parse_snapshots(lines).unwrap_err();
-        assert_eq!(err.to_string(), "input contains invalid characters");
     }
 }
