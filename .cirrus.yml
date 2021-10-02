@@ -1,0 +1,32 @@
+env:
+  PATH: "$HOME/.cargo/bin:$PATH"
+  RUST_VERSION: '1.53.0' # Needs to match FreeBSD version
+
+task:
+  name: Build (Debian Linux)
+  container:
+    image: debian:10-slim
+    cpu: 4
+  cargo_cache:
+    folder: $HOME/.cargo/registry
+    fingerprint_script: cat Cargo.lock
+  install_script:
+    - apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev
+    - curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
+  test_script:
+    - cargo test
+  before_cache_script: rm -rf $HOME/.cargo/registry/index
+
+task:
+  name: Build (FreeBSD)
+  freebsd_instance:
+    image_family: freebsd-13-0
+    cpu: 4
+  cargo_cache:
+    folder: $HOME/.cargo/registry
+    fingerprint_script: cat Cargo.lock
+  install_script:
+    - pkg install -y rust
+  test_script:
+    - cargo test
+  before_cache_script: rm -rf $HOME/.cargo/registry/index
