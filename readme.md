@@ -7,7 +7,7 @@ cron.daily; then set `at.rollc.at:snapkeep=h24d30w8m6y1` (or whatever
 is your retention policy) on datasets you want managed. Try
 `zfs-autosnap status` to check what's going on.
 
-Retenion policy is set via the property `at.rollc.at:snapkeep`, which
+Retention policy is set via the property `at.rollc.at:snapkeep`, which
 must be present on any datasets (filesystems or volumes) that you'd
 like to be managed. The proposed default of `h24d30w8m6y1` means to
 keep 24 hourly, 30 daily, 8 weekly, 6 monthly and 1 yearly snapshots.
@@ -30,3 +30,56 @@ in Python), was in production use since ca 2015 and there were zero
 incidents; this (Rust) version is basically a source port.
 
 USE AT YOUR OWN RISK.
+
+## systemd Timers
+
+To schedule `zsf-autosnap` to run with systemd, timers as follows can
+be created:
+
+### /etc/systemd/system/zfs-autosnap-snap.timer
+
+```ini
+[Unit]
+Description=Take ZFS snapshot hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+### /etc/systemd/system/zfs-autosnap-snap.service
+
+```ini
+[Unit]
+Description=Take ZFS auto snapshot
+
+[Service]
+ExecStart=zfs-autosnap snap
+```
+
+### /etc/systemd/system/zfs-autosnap-gc.timer
+
+```ini
+[Unit]
+Description=Garbage collect ZFS auto snapshots daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+### /etc/systemd/system/zfs-autosnap-gc.service
+
+```ini
+[Unit]
+Description=Garbage collect ZFS auto snapshots
+
+[Service]
+ExecStart=zfs-autosnap gc
+```
