@@ -147,7 +147,7 @@ impl ZFS {
         Ok(SnapshotMetadata {
             name: name.clone(),
             created: now,
-            used: ZFS::_parse_used(&ZFS::get_property(&name, "used")?).unwrap(),
+            used: ZFS::_parse_used(&ZFS::get_property(&name, "used")?)?,
         })
     }
 
@@ -160,39 +160,36 @@ impl ZFS {
                 "-t",
                 "snapshot",
                 "-o",
-                format!("name,creation,used,{}", PROPERTY_SNAPKEEP).as_str(),
+                &format!("name,creation,used,{}", PROPERTY_SNAPKEEP),
             ],
         )?;
-        Ok(ZFS::_parse_snapshots(lines))
+        ZFS::_parse_snapshots(lines)
     }
 
-    fn _parse_snapshots(lines: Vec<Vec<String>>) -> Vec<SnapshotMetadata> {
-        lines
-            .iter()
-            .filter(|v| match &v[..] {
-                // Skip snapshots that don't have the 'at.rollc.at:snapkeep' property.
-                // This works both for datasets where a snapshot did not inherit the property
-                // (which means the dataset should not be managed), and for explicitly marking a
-                // snapshot to be retained / opted out.
-                [_, _, _, snapkeep] => snapkeep != "-",
-                _ => panic!("Parse error"),
-            })
-            .map(|v| {
-                let sm = match &v[..] {
-                    [name, created, used, _] => SnapshotMetadata {
+    fn _parse_snapshots(lines: Vec<Vec<String>>) -> Result<Vec<SnapshotMetadata>> {
+        let mut snapshots = Vec::with_capacity(lines.len());
+        for line in lines {
+            // Skip snapshots that don't have the 'at.rollc.at:snapkeep' property.
+            // This works both for datasets where a snapshot did not inherit the property
+            // (which means the dataset should not be managed), and for explicitly marking a
+            // snapshot to be retained / opted out.
+            match line.as_slice() {
+                [_, _, _, snapkeep] if snapkeep == "-" => continue,
+                [name, created, used, _] => {
+                    let metadata = SnapshotMetadata {
                         name: name.to_string(),
                         created: chrono::DateTime::from_utc(
-                            chrono::NaiveDateTime::parse_from_str(&created, "%a %b %e %H:%M %Y")
-                                .unwrap(),
+                            chrono::NaiveDateTime::parse_from_str(created, "%a %b %e %H:%M %Y")?,
                             chrono::Utc,
                         ),
-                        used: ZFS::_parse_used(used).unwrap(),
-                    },
-                    _ => panic!("Parse error"),
-                };
-                sm
-            })
-            .collect()
+                        used: ZFS::_parse_used(used)?,
+                    };
+                    snapshots.push(metadata)
+                }
+                _ => return Err("list snapshots parse error".into()),
+            }
+        }
+        Ok(snapshots)
     }
 
     fn get_property(dataset: &str, property: &str) -> Result<String> {
@@ -227,9 +224,9 @@ impl ZFS {
     fn destroy_snapshot(snapshot: SnapshotMetadata) -> Result<()> {
         // This will destroy the named snapshot. Since ZFS has a single verb for destroying
         // anything, which could cause irreparable harm, we double check that the name we
-        // got passed looks like a snapshot name, and hard-crash otherwise.
+        // got passed looks like a snapshot name, and return an error otherwise.
         if !snapshot.name.contains("@") {
-            panic!("Tried to destroy something that is not a snapshot");
+            return Err("Tried to destroy something that is not a snapshot".into());
         }
         // zfs destroy -H ...@...
         ZFS::_call_do("destroy", &[&snapshot.name])
@@ -293,7 +290,8 @@ fn gc_find() -> Result<AgeCheckResult> {
     for (key, group) in &by_dataset {
         let check = check_age(
             group.to_vec(),
-            RetentionPolicy::from_str(&ZFS::get_property(key, PROPERTY_SNAPKEEP)?).unwrap(),
+            RetentionPolicy::from_str(&ZFS::get_property(key, PROPERTY_SNAPKEEP)?)
+                .map_err(|()| "unable to parse retention policy")?,
         );
         keep.extend(check.keep);
         delete.extend(check.delete);
@@ -503,7 +501,7 @@ mod tests {
                 String::from("-"),
             ],
         ];
-        let snapshots = ZFS::_parse_snapshots(lines);
+        let snapshots = ZFS::_parse_snapshots(lines).unwrap();
         assert_eq!(
             snapshots,
             vec![SnapshotMetadata {
@@ -511,7 +509,7 @@ mod tests {
                 created: chrono::DateTime::from_utc(
                     chrono::NaiveDateTime::parse_from_str(
                         "Sat Oct 2 09:59 2021",
-                        "%a %b %e %H:%M %Y"
+                        "%a %b %e %H:%M %Y",
                     )
                     .unwrap(),
                     chrono::Utc,
@@ -524,20 +522,18 @@ mod tests {
     #[test]
     fn test_parse_snapshots_empty() {
         let lines = vec![];
-        let snapshots = ZFS::_parse_snapshots(lines);
+        let snapshots = ZFS::_parse_snapshots(lines).unwrap();
         assert_eq!(snapshots, vec![]);
     }
 
     #[test]
-    #[should_panic]
     fn test_parse_snapshots_invalid_row() {
         let lines = vec![vec![String::from("unexpected")]];
-        let snapshots = ZFS::_parse_snapshots(lines);
-        assert_eq!(snapshots, vec![]);
+        let err = ZFS::_parse_snapshots(lines).unwrap_err();
+        assert_eq!(err.to_string(), "list snapshots parse error");
     }
 
     #[test]
-    #[should_panic]
     fn test_parse_snapshots_invalid_date() {
         let lines = vec![vec![
             String::from("first"),
@@ -545,7 +541,7 @@ mod tests {
             String::from("3G"),
             String::from("at.rollc.at:snapkeep=h24d30w8m6y1"),
         ]];
-        let snapshots = ZFS::_parse_snapshots(lines);
-        assert_eq!(snapshots, vec![]);
+        let err = ZFS::_parse_snapshots(lines).unwrap_err();
+        assert_eq!(err.to_string(), "input contains invalid characters");
     }
 }
