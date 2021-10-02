@@ -6,7 +6,7 @@ use std::str::FromStr;
 use zfs_autosnap::zfs::SnapshotMetadata;
 use zfs_autosnap::{zfs, AgeCheckResult, Result, RetentionPolicy, PROPERTY_SNAPKEEP};
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn gc_find() -> Result<AgeCheckResult> {
     // List all snapshots we're interested in, group them by dataset, check them against
@@ -15,8 +15,10 @@ fn gc_find() -> Result<AgeCheckResult> {
     let snapshots = zfs::list_snapshots()?;
     let mut by_dataset = HashMap::<String, Vec<SnapshotMetadata>>::new();
     for snapshot in snapshots {
-        if let Some(dataset_name) = snapshot.name.split("@").next() {
-            let group = by_dataset.entry(dataset_name.to_string()).or_insert(vec![]);
+        if let Some(dataset_name) = snapshot.name.split('@').next() {
+            let group = by_dataset
+                .entry(dataset_name.to_string())
+                .or_insert_with(Vec::new);
             group.push(snapshot);
         }
     }
@@ -132,7 +134,7 @@ fn do_gc() -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let action = &args.get(1).and_then(|s| Some(s.as_str()));
+    let action = &args.get(1).map(|s| s.as_str());
     match action {
         None | Some("help" | "-h" | "--help") => {
             do_help();

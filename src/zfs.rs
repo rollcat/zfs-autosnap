@@ -71,8 +71,7 @@ pub fn get_property(dataset: &str, property: &str) -> Result<String> {
     // Get a single named property on given dataset.
     // zfs list -H -t snapshot -o name,creation,used,at.rollc.at:snapkeep
     Ok(call_read("get", &[property, "-o", "value", dataset])?
-        .iter()
-        .next()
+        .get(0)
         .unwrap()[0]
         .clone())
 }
@@ -100,7 +99,7 @@ pub fn destroy_snapshot(snapshot: SnapshotMetadata) -> Result<()> {
     // This will destroy the named snapshot. Since ZFS has a single verb for destroying
     // anything, which could cause irreparable harm, we double check that the name we
     // got passed looks like a snapshot name, and return an error otherwise.
-    if !snapshot.name.contains("@") {
+    if !snapshot.name.contains('@') {
         return Err("Tried to destroy something that is not a snapshot".into());
     }
     // zfs destroy -H ...@...
@@ -118,7 +117,7 @@ fn call_read(action: &str, args: &[&str]) -> Result<Vec<Vec<String>>> {
         .stdout_str()
         .lines()
         .filter(|&s| !s.is_empty())
-        .map(|s| s.split("\t").map(|ss| ss.to_string()).collect())
+        .map(|s| s.split('\t').map(|ss| ss.to_string()).collect())
         .collect())
 }
 

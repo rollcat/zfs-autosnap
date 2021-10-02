@@ -38,10 +38,7 @@ impl RetentionPolicy {
                 "%Y",
                 // NOTE: chrono keeps years as i32 (signed); however there were no ZFS
                 // deployments before ca (+)2006, so I guess it's safe to cast to u32.
-                match self.yearly {
-                    Some(y) => Some(y as u32),
-                    None => None,
-                },
+                self.yearly.map(|y| y as u32),
             ),
         ]
     }
@@ -106,8 +103,7 @@ impl FromStr for RetentionPolicy {
             daily: None,
             hourly: None,
         };
-        let mut chars = x.chars().enumerate();
-        while let Some((i, ch)) = chars.next() {
+        for (i, ch) in x.chars().enumerate() {
             match ch {
                 'y' => policy.yearly = digits_from(i + 1, x).parse().ok(),
                 'm' => policy.monthly = digits_from(i + 1, x).parse().ok(),
