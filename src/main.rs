@@ -1,61 +1,12 @@
 use byte_unit::Byte;
 use chrono::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use zfs_autosnap::zfs::SnapshotMetadata;
-use zfs_autosnap::{zfs, Result, RetentionPolicy, PROPERTY_SNAPKEEP};
+use zfs_autosnap::{zfs, AgeCheckResult, Result, RetentionPolicy, PROPERTY_SNAPKEEP};
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
-#[derive(Debug)]
-struct AgeCheckResult {
-    keep: Vec<SnapshotMetadata>,
-    delete: Vec<SnapshotMetadata>,
-}
-
-fn check_age(snapshots: &mut [SnapshotMetadata], rp: RetentionPolicy) -> AgeCheckResult {
-    let mut to_keep = HashSet::<&SnapshotMetadata>::new();
-    // Sort newest snapshots first, so when we consider which ones to retain, the oldest
-    // come last (and fall off the keep-set).
-    snapshots.sort_unstable_by_key(|s| -s.created.timestamp());
-    for (pattern, rule) in rp.rules() {
-        // RetentionPolicy.rules() creates a set of date format patterns (see strftime(3)),
-        // which are meant to be lossy/fuzzy (e.g. year-month-day; year-week, etc).
-        let mut last = None;
-        match rule {
-            Some(0) => {}
-            Some(number_to_keep) => {
-                let mut kept = 0;
-                for snapshot in snapshots.iter() {
-                    // We use these date patterns to format each snapshot's creation date, to
-                    // put it in an ad-hoc bucket (last / period); then keep track of how many
-                    // snapshots (kept) we've retained so far for the current bucket.
-                    let period = Some(snapshot.created.format(pattern).to_string());
-                    if last != period {
-                        last = period;
-                        to_keep.insert(snapshot);
-                        kept += 1;
-                        if kept == number_to_keep {
-                            // This is as many snapshots as we wanted to
-                            // keep, let's visit the next retention rule.
-                            break;
-                        }
-                    }
-                }
-            }
-            None => {}
-        }
-    }
-
-    let (keep, delete): (Vec<_>, Vec<_>) = snapshots
-        .iter()
-        .partition(|snapshot| to_keep.contains(snapshot));
-    AgeCheckResult {
-        keep: keep.into_iter().cloned().collect(),
-        delete: delete.into_iter().cloned().collect(),
-    }
-}
 
 fn gc_find() -> Result<AgeCheckResult> {
     // List all snapshots we're interested in, group them by dataset, check them against
@@ -72,11 +23,9 @@ fn gc_find() -> Result<AgeCheckResult> {
     let mut keep = vec![];
     let mut delete = vec![];
     for (key, group) in by_dataset.iter_mut() {
-        let check = check_age(
-            group,
-            RetentionPolicy::from_str(&zfs::get_property(key, PROPERTY_SNAPKEEP)?)
-                .map_err(|()| "unable to parse retention policy")?,
-        );
+        let policy = RetentionPolicy::from_str(&zfs::get_property(key, PROPERTY_SNAPKEEP)?)
+            .map_err(|()| "unable to parse retention policy")?;
+        let check = policy.check_age(group);
         keep.extend(check.keep);
         delete.extend(check.delete);
     }

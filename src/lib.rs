@@ -1,3 +1,5 @@
+use crate::zfs::SnapshotMetadata;
+use std::collections::HashSet;
 use std::error::Error;
 use std::str::FromStr;
 
@@ -19,8 +21,14 @@ pub struct RetentionPolicy {
     pub hourly: Option<u32>,
 }
 
+#[derive(Debug)]
+pub struct AgeCheckResult {
+    pub keep: Vec<SnapshotMetadata>,
+    pub delete: Vec<SnapshotMetadata>,
+}
+
 impl RetentionPolicy {
-    pub fn rules(&self) -> [(&str, Option<u32>); 5] {
+    fn rules(&self) -> [(&str, Option<u32>); 5] {
         [
             ("%Y-%m-%d %H", self.hourly),
             ("%Y-%m-%d", self.daily),
@@ -36,6 +44,49 @@ impl RetentionPolicy {
                 },
             ),
         ]
+    }
+
+    pub fn check_age(&self, snapshots: &mut [SnapshotMetadata]) -> AgeCheckResult {
+        let mut to_keep = HashSet::<&SnapshotMetadata>::new();
+        // Sort newest snapshots first, so when we consider which ones to retain, the oldest
+        // come last (and fall off the keep-set).
+        snapshots.sort_unstable_by_key(|s| -s.created.timestamp());
+        for (pattern, rule) in self.rules() {
+            // RetentionPolicy.rules() creates a set of date format patterns (see strftime(3)),
+            // which are meant to be lossy/fuzzy (e.g. year-month-day; year-week, etc).
+            let mut last = None;
+            match rule {
+                Some(0) => {}
+                Some(number_to_keep) => {
+                    let mut kept = 0;
+                    for snapshot in snapshots.iter() {
+                        // We use these date patterns to format each snapshot's creation date, to
+                        // put it in an ad-hoc bucket (last / period); then keep track of how many
+                        // snapshots (kept) we've retained so far for the current bucket.
+                        let period = Some(snapshot.created.format(pattern).to_string());
+                        if last != period {
+                            last = period;
+                            to_keep.insert(snapshot);
+                            kept += 1;
+                            if kept == number_to_keep {
+                                // This is as many snapshots as we wanted to
+                                // keep, let's visit the next retention rule.
+                                break;
+                            }
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+
+        let (keep, delete): (Vec<_>, Vec<_>) = snapshots
+            .iter()
+            .partition(|snapshot| to_keep.contains(snapshot));
+        AgeCheckResult {
+            keep: keep.into_iter().cloned().collect(),
+            delete: delete.into_iter().cloned().collect(),
+        }
     }
 }
 
