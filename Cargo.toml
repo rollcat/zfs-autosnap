@@ -1,8 +1,21 @@
 [package]
 name = "zfs-autosnap"
-version = "0.1.0"
+authors = [
+  "Wesley Moore <wes@wezm.net>",
+  "Kamil Cholewiński <kamil@rollc.at>"
+]
+version = "0.3.0"
 edition = "2018"
+
+homepage = "https://github.com/wezm/zfs-autosnap"
+repository = "https://github.com/wezm/zfs-autosnap.git"
+
+readme = "README.md"
 license = "MIT"
+
+description = "Automatic ZFS snapshot utility"
+keywords = ["zfs", "cli", "automatic", "snapshot"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 byte-unit = "4"
