@@ -1,3 +1,4 @@
+Copyright (c) 2021 Wesley Moore <wes@wezm.net>
 Copyright (c) 2021 Kamil Cholewiński <kamil@rollc.at>
 
 Permission is hereby granted, free of charge, to any person obtaining
