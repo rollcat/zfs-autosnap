@@ -1,0 +1,5 @@
+[Unit]
+Description=Take ZFS auto snapshot
+
+[Service]
+ExecStart=zfs-autosnap snap zhome
