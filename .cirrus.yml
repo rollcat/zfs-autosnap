@@ -1,6 +1,8 @@
 env:
   PATH: "$HOME/.cargo/bin:$PATH"
   RUST_VERSION: '1.53.0' # Needs to match FreeBSD version
+  AWS_ACCESS_KEY_ID: ENCRYPTED[2c87caa5da894518c37c6368706e6867ff1128f0968009d88a5b7d4a36cf866c3898af902cb633c14d08e1061d24e6a9]
+  AWS_SECRET_ACCESS_KEY: ENCRYPTED[21d334c58a048db212c06bf337eea7041431a8bf3b7261dae2a17c0ad50c33a6045883e962b25b6662914ff64133d67c]
 
 task:
   name: Build (Debian Linux)
@@ -11,10 +13,22 @@ task:
     folder: $HOME/.cargo/registry
     fingerprint_script: cat Cargo.lock
   install_script:
-    - apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev
+    - apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl gcc libc6-dev musl-tools
     - curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
+    - rustup target add x86_64-unknown-linux-musl
+    - mkdir ~/bin
+    - curl -L https://releases.wezm.net/upload-to-s3/0.1.10/upload-to-s3-0.1.10-x86_64-unknown-linux-musl.tar.gz | tar xzf - -C ~/bin
   test_script:
     - cargo test
+  publish_script: |
+    tag=$(git describe --exact-match HEAD 2>/dev/null || true)
+    if [ -n "$tag" ]; then
+      cargo build --release --locked --target x86_64-unknown-linux-musl
+      tarball="zfs-autosnap-${tag}-x86_64-unknown-linux-musl.tar.gz"
+      strip target/x86_64-unknown-linux-musl/release/zfs-autosnap
+      tar zcf "$tarball" -C target/x86_64-unknown-linux-musl/release zfs-autosnap
+      ~/bin/upload-to-s3 -b releases.wezm.net "$tarball" "zfs-autosnap/$tag/$tarball"
+    fi
   before_cache_script: rm -rf $HOME/.cargo/registry/index
 
 task:
@@ -26,7 +40,17 @@ task:
     folder: $HOME/.cargo/registry
     fingerprint_script: cat Cargo.lock
   install_script:
-    - pkg install -y rust
+    - pkg install -y git-lite rust
+    - fetch -o - https://releases.wezm.net/upload-to-s3/0.1.10/upload-to-s3-0.1.10-amd64-unknown-freebsd.tar.gz | tar xzf - -C /usr/local/bin
   test_script:
     - cargo test
+  publish_script: |
+    tag=$(git describe --exact-match HEAD 2>/dev/null || true)
+    if [ -n "$tag" ]; then
+      cargo build --release --locked
+      tarball="zfs-autosnap-${tag}-amd64-unknown-freebsd.tar.gz"
+      strip target/release/zfs-autosnap
+      tar zcf "$tarball" -C target/release zfs-autosnap
+      upload-to-s3 -b releases.wezm.net "$tarball" "zfs-autosnap/$tag/$tarball"
+    fi
   before_cache_script: rm -rf $HOME/.cargo/registry/index
