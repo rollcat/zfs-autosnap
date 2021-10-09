@@ -58,12 +58,12 @@ Installation
 Pre-compiled binaries are available for x86\_64 Linux and FreeBSD, they have no
 third-party runtime dependencies:
 
-* [FreeBSD 13 amd64](https://releases.wezm.net/zfs-autosnap/0.3.0/zfs-autosnap-0.3.0-amd64-unknown-freebsd.tar.gz)
-* [Linux x86\_64](https://releases.wezm.net/zfs-autosnap/0.3.0/zfs-autosnap-0.3.0-x86_64-unknown-linux-musl.tar.gz)
+* [FreeBSD 13 amd64](https://releases.wezm.net/zfs-autosnap/0.3.1/zfs-autosnap-0.3.1-amd64-unknown-freebsd.tar.gz)
+* [Linux x86\_64](https://releases.wezm.net/zfs-autosnap/0.3.1/zfs-autosnap-0.3.1-x86_64-unknown-linux-musl.tar.gz)
 
 Example to download and extract a binary:
 
-    curl https://releases.wezm.net/zfs-autosnap/0.3.0/zfs-autosnap-0.3.0-x86_64-unknown-linux-musl.tar.gz | tar zxf -
+    curl https://releases.wezm.net/zfs-autosnap/0.3.1/zfs-autosnap-0.3.1-x86_64-unknown-linux-musl.tar.gz | tar zxf -
 
 ### Build from Source
 
