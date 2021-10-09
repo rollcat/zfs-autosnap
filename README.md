@@ -36,7 +36,7 @@ Usage
 -----
 
 1. Add the retention policy to the dataset you want to snapshot. E.g.
-   `sudo zfs set at.rollc.at:snapkeep=h24d30w8m6y1 tank`
+   `zfs set at.rollc.at:snapkeep=h24d30w8m6y1 tank`
 2. Run `zfs-autosnap snap` hourly via `cron.hourly` or systemd timer
 3. Run `zfs-autosnap gc` daily via `cron.daily`
 
@@ -49,6 +49,44 @@ update the dataset name, then enable and start the timers. E.g.
 
     systemctl enable --now zfs-autosnap-snap.timer
     systemctl enable --now zfs-autosnap-gc.timer
+
+Installation
+------------
+
+### Pre-compiled Binaries
+
+Pre-compiled binaries are available for x86\_64 Linux and FreeBSD, they have no
+third-party runtime dependencies:
+
+* [FreeBSD 13 amd64](https://releases.wezm.net/zfs-autosnap/0.3.0/zfs-autosnap-0.3.0-amd64-unknown-freebsd.tar.gz)
+* [Linux x86\_64](https://releases.wezm.net/zfs-autosnap/0.3.0/zfs-autosnap-0.3.0-x86_64-unknown-linux-musl.tar.gz)
+
+Example to download and extract a binary:
+
+    curl https://releases.wezm.net/zfs-autosnap/0.3.0/zfs-autosnap-0.3.0-x86_64-unknown-linux-musl.tar.gz | tar zxf -
+
+### Build from Source
+
+**Minimum Supported Rust Version:** 1.53.0
+
+`zfs-autosnap` is implemented in Rust. See the Rust website for [instructions
+on installing the toolchain][rustup].
+
+#### From Git Checkout or Release Tarball
+
+Build the binary with `cargo build --release --locked`. The binary will be in
+`target/release/zfs-autosnap`.
+
+#### From crates.io
+
+`cargo install zfs-autosnap`
+
+#### Arch Linux PKGBUILD
+
+I have a PKGBUILD for a pacman package in my personal package collection, which
+can be used as the basis of your own:
+
+<https://github.com/wezm/aur/tree/master/zfs-autosnap>
 
 How It Works
 ------------
