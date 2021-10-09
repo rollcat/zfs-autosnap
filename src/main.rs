@@ -47,7 +47,7 @@ fn do_help() {
 
 fn do_version() {
     println!(
-        "zfs-autosnap v{} <https://github.com/rollcat/zfs-autosnap>",
+        "zfs-autosnap v{} <https://github.com/wezm/zfs-autosnap>",
         VERSION
     );
 }
