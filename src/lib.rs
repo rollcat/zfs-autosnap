@@ -48,7 +48,7 @@ impl RetentionPolicy {
         // Sort newest snapshots first, so when we consider which ones to retain, the oldest
         // come last (and fall off the keep-set).
         snapshots.sort_unstable_by_key(|s| -s.created.timestamp());
-        for (pattern, rule) in self.rules() {
+        'next_rule: for (pattern, rule) in self.rules() {
             // RetentionPolicy.rules() creates a set of date format patterns (see strftime(3)),
             // which are meant to be lossy/fuzzy (e.g. year-month-day; year-week, etc).
             let mut last = None;
@@ -68,7 +68,7 @@ impl RetentionPolicy {
                             if kept == number_to_keep {
                                 // This is as many snapshots as we wanted to
                                 // keep, let's visit the next retention rule.
-                                break;
+                                continue 'next_rule;
                             }
                         }
                     }
