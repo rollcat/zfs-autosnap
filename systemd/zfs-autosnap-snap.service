@@ -2,4 +2,4 @@
 Description=Take ZFS auto snapshot
 
 [Service]
-ExecStart=zfs-autosnap snap zhome
+ExecStart=zfs-autosnap snap

@@ -2,4 +2,4 @@
 Description=Garbage collect ZFS auto snapshots
 
 [Service]
-ExecStart=zfs-autosnap gc zhome
+ExecStart=zfs-autosnap gc
