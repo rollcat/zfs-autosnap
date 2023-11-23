@@ -69,8 +69,8 @@ fn parse_snapshots(lines: Vec<Vec<String>>) -> Result<Vec<SnapshotMetadata>> {
 
 pub fn get_property(dataset: &str, property: &str) -> Result<String> {
     // Get a single named property on given dataset.
-    // zfs list -H -t snapshot -o name,creation,used,at.rollc.at:snapkeep
-    Ok(call_read("get", &[property, "-o", "value", dataset])?
+    // zfs get -H -o value $property $dataset
+    Ok(call_read("get", &["-o", "value", property, dataset])?
         .get(0)
         .unwrap()[0]
         .clone())
