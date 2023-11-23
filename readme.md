@@ -21,6 +21,12 @@ particular snapshot (e.g. right before a risky upgrade), set its
 As always, when in doubt, consider reading the source: it's mere
 400ish lines of relatively clean Rust.
 
+## Tested on
+
+- FreeBSD 14.0
+- NixOS 23.05
+- Ubuntu 22.04
+
 ## Safety
 
 It will try not to eat your data; the only destructive operation is
